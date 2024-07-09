@@ -1,11 +1,6 @@
-# load data from repo
-import sys
-import warnings
-from sklearn.datasets import load_diabetes, load_iris
-from synthcity.plugins import Plugins
+from sklearn.datasets import load_iris
 from synthcity.plugins.core.dataloader import GenericDataLoader
 from synthcity.benchmark import Benchmarks
-import pandas as pd
 
 X, y = load_iris(return_X_y=True, as_frame=True)
 X["target"] = y
