@@ -91,7 +91,7 @@
     "adult": {
         "name": "adult",
         "id": 2,
-        "cat_features": [
+        "discrete": [
             "sex",
             "workclass",
             "education",
@@ -100,21 +100,18 @@
             "race",
             "native-country"
         ],
-        "bin_features": [
-            "sex"
-        ],
-        "num_features": [
+        "numerical": [
             "age",
             "capital-gain",
             "capital-loss",
             "hours-per-week"
         ],
-        "drop_features": [
+        "drop": [
             "fnlwgt",
             "education-num",
             "marital-status"
         ],
-        "sensitive_fields": [
+        "sensitive": [
             "age",
             "sex",
             "race"

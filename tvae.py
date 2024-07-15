@@ -36,6 +36,8 @@ class TabularVAE(nn.Module):
             Reference dataset, used for training the tabular encoder
         fasd: bool
             Whether to use fidelity agnostic synthetic data generation
+        fasd_args: dict
+            When using fasd, dictionary of parameters relating to fasd.
         cond: Optional
             Optional conditional
         decoder_n_layers_hidden: int
@@ -89,6 +91,7 @@ class TabularVAE(nn.Module):
         X: pd.DataFrame,
         fasd: bool,
         n_units_embedding: int,
+        fasd_args: dict = {},
         cond: Optional[Union[pd.DataFrame, pd.Series, np.ndarray]] = None,
         lr: float = 2e-4,
         n_iter: int = 500,
@@ -123,10 +126,11 @@ class TabularVAE(nn.Module):
     ) -> None:
         super(TabularVAE, self).__init__()
         self.columns = X.columns
-        self.categorical_limit = 10
+        self.categorical_limit = 20
         self.encoder_whitelist = encoder_whitelist
         self.encoder_max_clusters = encoder_max_clusters
         self.fasd = fasd
+        self.fasd_args = fasd_args
         self.random_state = random_state
         n_units_conditional = 0
         self.cond_encoder: Optional[OneHotEncoder] = None
@@ -157,22 +161,22 @@ class TabularVAE(nn.Module):
 
             # instantiate and train model
             input_dim = X_enc.shape[1]
-            hidden_dim = 100
             self.fasd_nn = FASD_NN(
                 input_dim=input_dim,
-                hidden_dim=hidden_dim,
+                hidden_dim=fasd_args["hidden_dim"],
                 num_classes=y.shape[1],
                 random_state=self.random_state,
                 checkpoint_dir="workspace",
                 val_split=0.2,
                 latent_activation=nn.ReLU(),
             )
-            fasd_args = {
-                "criterion": nn.CrossEntropyLoss(),
-                "optimizer": torch.optim.Adam(self.fasd_nn.parameters(), lr=0.001),
-                "num_epochs": 500,
-                "batch_size": 64,
-            }
+            fasd_args.pop(
+                "hidden_dim"
+            )  # remove so we dont pass hidden_dim to train_model method
+            fasd_args["criterion"] = nn.CrossEntropyLoss()  # add criterion
+            fasd_args["optimizer"] = torch.optim.Adam(
+                self.fasd_nn.parameters(), lr=0.001
+            )  # add optimizer
             self.fasd_nn.train_model(X=X_enc, y=y, **fasd_args)
 
             # get df of representations
@@ -184,18 +188,13 @@ class TabularVAE(nn.Module):
             # we need the regular X data to become representations rather than original raw data, for later conditionals
             X = self.fasd_encoder.encode(X_enc)
 
-            # note that we do not reattach y to X, as we do not need this.
-            # if this throws errors, we can attach it and later replace for generated targets.
-
-            # pass representations through a new tabular encoder (employs BayesianGMM for continuous representations)
-            # now we get the tabular encoded representations, which should be the input to the generative model
+            # pass representations through a new tabular encoder
+            # however we pass all columns as whitelist so they wont actually get encoded!
             self.fasd_tab_encoder = TabularEncoder(
-                max_clusters=self.encoder_max_clusters,
-                whitelist=self.encoder_whitelist,
-                categorical_limit=self.categorical_limit,
+                categorical_limit=1, max_clusters=10
             ).fit(X, discrete_columns=None)
             X_enc = self.fasd_tab_encoder.transform(X)
-            self.X_enc_rep = X_enc.copy()  # preserve for training
+            self.X_rep = X_enc.copy()
 
             self.encoder = self.fasd_tab_encoder
         else:
@@ -333,7 +332,7 @@ class TabularVAE(nn.Module):
     ) -> Any:
 
         if self.fasd:
-            X_enc = self.X_enc_rep
+            X_enc = self.X_rep
         else:
             X_enc = self.X_enc_ori
 
@@ -369,9 +368,10 @@ class TabularVAE(nn.Module):
 
         if self.fasd:
             # predict y from synthetic representations, but these first need to be decoded back to original latent space
-            y = self.fasd_predictor.predict(
-                self.fasd_tab_encoder.inverse_transform(samples)
-            )
+            # y = self.fasd_predictor.predict(
+            #     self.fasd_tab_encoder.inverse_transform(samples)
+            # )
+            y = self.fasd_predictor.predict(samples)
 
             # train decoder to decode representations back to original data space (this can be from encoded space)
             # for this we have to first find which columns are discrete (one-hot) and continuous in the regular data space
@@ -397,7 +397,7 @@ class TabularVAE(nn.Module):
             ]
 
             fasd_decoder = FASD_Decoder(
-                input_dim=samples.shape[1],
+                input_dim=self.X_rep.shape[1],
                 cont_idx=cont_feats,
                 cat_idx=discrete_feats,
                 checkpoint_dir="workspace",
@@ -408,15 +408,15 @@ class TabularVAE(nn.Module):
             fasd_decoder_args = {
                 "criterion_cont": nn.MSELoss(),
                 "criterion_cat": nn.CrossEntropyLoss(),
-                "optimizer": torch.optim.Adam(fasd_decoder.parameters(), lr=0.001),
-                "num_epochs": 500,
-                "batch_size": 64,
+                "optimizer": self.fasd_args["optimizer"],
+                "num_epochs": self.fasd_args["num_epochs"],
+                "batch_size": self.fasd_args["batch_size"],
             }
 
             # we train the decoder to predict original encoded data from the original representations
             # first we still have to remove the target column from the original dataset (representations do not contain this) to get the target dataset
             fasd_decoder.train_model(
-                X=self.X_enc_rep,
+                X=self.X_rep,
                 y=self.X_enc_ori.drop(self.target_columns, axis=1),
                 **fasd_decoder_args,
             )
