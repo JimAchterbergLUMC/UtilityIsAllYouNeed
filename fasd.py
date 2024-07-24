@@ -22,7 +22,7 @@ class FASD_Encoder(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, latent_activation) -> None:
         super(FASD_Encoder, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim), latent_activation
+            nn.Linear(input_dim, hidden_dim, bias=False), latent_activation
         )
 
     def forward(self, x: Tensor):
@@ -140,7 +140,7 @@ class FASD_NN(nn.Module):
                 torch.tensor(y.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
         )
         val_loader = DataLoader(
             TensorDataset(
@@ -148,11 +148,12 @@ class FASD_NN(nn.Module):
                 torch.tensor(y_val.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
         )
 
         # training loop
-        best_loss = float("inf")
+        # best_loss = float("inf")
+        best_acc = float("inf")
         for epoch in range(num_epochs):
             self.train()
             train_loss = 0
@@ -177,10 +178,12 @@ class FASD_NN(nn.Module):
             print(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss/len(dataloader):.4f}, Acc: {train_acc:.2f}, Val_Loss: {val_loss:.4f}, Val_Acc: {val_acc:.2f}"
             )
-
-            if val_loss < best_loss:
-                best_loss = val_loss
+            if val_acc < best_acc:
+                best_acc = val_acc
                 torch.save(self.state_dict(), model_path)
+            # if val_loss < best_loss:
+            #     best_loss = val_loss
+            #     torch.save(self.state_dict(), model_path)
 
         # load best performing model on validation set
         self.load_state_dict(torch.load(model_path))
@@ -204,6 +207,191 @@ class FASD_NN(nn.Module):
 
         val_acc = 100 * val_correct / val_total
         return val_loss / len(val_loader), val_acc
+
+
+# class FASD_Decoder(nn.Module):
+#     """
+#     Single hidden layer Decoder.
+#     Decodes tabular encoded representations to tabular encoded original data space.
+
+#     TBD:
+#     - separate cont and cat output for easier loss calculation
+#     - implement separate loss calculation
+#     - add a 'restructure output' method to restructure output according to the original structure
+
+#     TBD:
+#     - add potential for more hidden layers.
+#     - add self-specifiable activation functions
+#     """
+
+#     def __init__(
+#         self,
+#         input_dim: int,
+#         cont_idx: list,
+#         cat_idx: list,
+#         checkpoint_dir: str,
+#         val_split: float,
+#         random_state: int,
+#     ) -> None:
+#         """
+#         cont_idx: list of indices where output is continuous
+#         cat_idx: list of lists where each list contains the indices where output is categorical
+#         """
+#         super(FASD_Decoder, self).__init__()
+
+#         self.cont_idx = cont_idx
+#         self.cat_idx = cat_idx
+#         self.checkpoint_dir = checkpoint_dir
+#         self.val_split = val_split
+#         self.random_state = random_state
+
+#         self.dec_cont = nn.Linear(input_dim, len(self.cont_idx))
+#         self.dec_cats = nn.ModuleList(
+#             [nn.Linear(input_dim, len(idx_list)) for idx_list in self.cat_idx]
+#         )
+
+#     def forward(self, x: Tensor):
+#         cont_out = torch.sigmoid(self.dec_cont(x))
+
+#         cat_out = []
+#         for dec_cat in self.dec_cats:
+#             cat_out.append(torch.nn.functional.softmax(dec_cat(x), dim=1))
+
+#         return cont_out, cat_out
+
+#     def train_model(
+#         self,
+#         X: pd.DataFrame,
+#         y: pd.DataFrame,
+#         criterion_cont,
+#         criterion_cat,
+#         optimizer,
+#         num_epochs=10,
+#         batch_size=64,
+#     ):
+
+#         self.output_cols = y.columns
+#         # path to fasd model for checkpointing
+#         model_file = "best_fasd_decoder.pth"
+#         model_path = os.path.join(self.checkpoint_dir, model_file)
+
+#         # clear existing best trained fasd model if it already exists
+#         if os.path.exists(model_path):
+#             os.remove(model_path)
+
+#         # split into validation set for monitoring and best model selection
+#         X, y = X.copy(), y.copy()
+#         X, X_val, y, y_val = train_test_split(
+#             X, y, test_size=self.val_split, random_state=self.random_state
+#         )
+
+#         # create dataloaders for training
+#         dataloader = DataLoader(
+#             TensorDataset(
+#                 torch.tensor(X.values, dtype=torch.float32),
+#                 torch.tensor(y.values, dtype=torch.float32),
+#             ),
+#             batch_size=batch_size,
+#             shuffle=True,
+#         )
+
+#         val_loader = DataLoader(
+#             TensorDataset(
+#                 torch.tensor(X_val.values, dtype=torch.float32),
+#                 torch.tensor(y_val.values, dtype=torch.float32),
+#             ),
+#             batch_size=batch_size,
+#             shuffle=True,
+#         )
+
+#         # training loop
+#         best_loss = float("inf")
+#         for epoch in range(num_epochs):
+#             self.train()
+#             for inputs, targets in dataloader:
+#                 targets_cont = targets[:, self.cont_idx]
+
+#                 targets_cat = [targets[:, idx] for idx in self.cat_idx]
+
+#                 outputs_cont, outputs_cat = self.forward(inputs)
+
+#                 loss_cont = criterion_cont(outputs_cont, targets_cont)
+
+#                 loss_cat = sum(
+#                     criterion_cat(output, target)
+#                     for output, target in zip(outputs_cat, targets_cat)
+#                 )
+#                 loss = loss_cont + loss_cat
+
+#                 optimizer.zero_grad()
+#                 loss.backward()
+#                 optimizer.step()
+#             val_loss = self.validate(val_loader, criterion_cont, criterion_cat)
+
+#             print(
+#                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}, Val_Loss: {val_loss:.4f}"
+#             )
+
+#             if val_loss < best_loss:
+#                 best_loss = val_loss
+#                 torch.save(self.state_dict(), model_path)
+
+#         # load best performing model on validation set
+#         self.load_state_dict(torch.load(model_path))
+
+#     def validate(self, val_loader, criterion_cont, criterion_cat):
+#         self.eval()
+#         val_loss = 0
+#         with torch.no_grad():
+#             for inputs, targets in val_loader:
+#                 targets_cont = targets[:, self.cont_idx]
+#                 targets_cat = [targets[:, idx] for idx in self.cat_idx]
+
+#                 outputs_cont, outputs_cat = self.forward(inputs)
+
+#                 loss_cont = criterion_cont(outputs_cont, targets_cont)
+#                 loss_cat = sum(
+#                     criterion_cat(output, target)
+#                     for output, target in zip(outputs_cat, targets_cat)
+#                 )
+#                 loss = loss_cont + loss_cat
+
+#                 val_loss += loss.item()
+#         return val_loss / len(val_loader)
+
+#     def decode(self, X: pd.DataFrame):
+#         """
+#         pass input data through the trained decoder and restructure it according to input data.
+#         """
+#         X = X.copy()
+#         self.eval()
+#         with torch.no_grad():
+#             x = torch.tensor(X.values, dtype=torch.float32)
+#             x_cont, x_cat = self.forward(x)
+
+#         x_cat = [one_hot_from_probs(x) for x in x_cat]
+
+#         # restructure output to original input structure
+#         output = torch.zeros(
+#             x_cont.size(0),
+#             x_cont.size(1) + sum([x_cat_.size(1) for x_cat_ in x_cat]),
+#             dtype=x_cont.dtype,
+#             device=x_cont.device,
+#         )
+#         output[:, self.cont_idx] = x_cont
+#         for idx, val in zip(self.cat_idx, x_cat):
+#             output[:, idx] = val
+
+#         # turn tensor into dataframe
+#         X = pd.DataFrame(output.detach().numpy(), columns=self.output_cols)
+#         return X
+
+
+# # one hot encode the categoricals according to softmax probabilities
+# def one_hot_from_probs(x: torch.Tensor):
+#     idx = x.argmax(dim=1, keepdim=True)
+#     x = torch.zeros_like(x).scatter_(1, idx, 1)
+#     return x
 
 
 class FASD_Decoder(nn.Module):
@@ -242,30 +430,23 @@ class FASD_Decoder(nn.Module):
         self.val_split = val_split
         self.random_state = random_state
 
-        self.dec_cont = nn.Linear(input_dim, len(self.cont_idx))
-        self.dec_cats = nn.ModuleList(
-            [nn.Linear(input_dim, len(idx_list)) for idx_list in self.cat_idx]
-        )
+        output_dim = len([x for xs in cat_idx for x in xs]) + len(cont_idx)
+
+        self.out = nn.Sequential(nn.Linear(input_dim, output_dim), nn.Sigmoid())
 
     def forward(self, x: Tensor):
-        cont_out = torch.tanh(self.dec_cont(x))
-
-        cat_out = []
-        for dec_cat in self.dec_cats:
-            cat_out.append(torch.nn.functional.softmax(dec_cat(x), dim=1))
-
-        return cont_out, cat_out
+        return self.out(x)
 
     def train_model(
         self,
         X: pd.DataFrame,
         y: pd.DataFrame,
-        criterion_cont,
-        criterion_cat,
+        criterion,
         optimizer,
         num_epochs=10,
         batch_size=64,
     ):
+
         self.output_cols = y.columns
         # path to fasd model for checkpointing
         model_file = "best_fasd_decoder.pth"
@@ -288,7 +469,7 @@ class FASD_Decoder(nn.Module):
                 torch.tensor(y.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
         )
 
         val_loader = DataLoader(
@@ -297,35 +478,26 @@ class FASD_Decoder(nn.Module):
                 torch.tensor(y_val.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
         )
 
         # training loop
         best_loss = float("inf")
         for epoch in range(num_epochs):
             self.train()
+            train_loss = 0
             for inputs, targets in dataloader:
-                targets_cont = targets[:, self.cont_idx]
-
-                targets_cat = [targets[:, idx] for idx in self.cat_idx]
-
-                outputs_cont, outputs_cat = self.forward(inputs)
-
-                loss_cont = criterion_cont(outputs_cont, targets_cont)
-
-                loss_cat = sum(
-                    criterion_cat(output, target)
-                    for output, target in zip(outputs_cat, targets_cat)
-                )
-                loss = loss_cont + loss_cat
-
+                outputs = self.forward(inputs)
+                loss = criterion(outputs, targets)
                 optimizer.zero_grad()
                 loss.backward()
+
+                train_loss += loss.item()
                 optimizer.step()
-            val_loss = self.validate(val_loader, criterion_cont, criterion_cat)
+            val_loss = self.validate(val_loader, criterion)
 
             print(
-                f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}, Val_Loss: {val_loss:.4f}"
+                f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss/len(dataloader):.4f}, Val_Loss: {val_loss:.4f}"
             )
 
             if val_loss < best_loss:
@@ -335,23 +507,13 @@ class FASD_Decoder(nn.Module):
         # load best performing model on validation set
         self.load_state_dict(torch.load(model_path))
 
-    def validate(self, val_loader, criterion_cont, criterion_cat):
+    def validate(self, val_loader, criterion):
         self.eval()
         val_loss = 0
         with torch.no_grad():
             for inputs, targets in val_loader:
-                targets_cont = targets[:, self.cont_idx]
-                targets_cat = [targets[:, idx] for idx in self.cat_idx]
-
-                outputs_cont, outputs_cat = self.forward(inputs)
-
-                loss_cont = criterion_cont(outputs_cont, targets_cont)
-                loss_cat = sum(
-                    criterion_cat(output, target)
-                    for output, target in zip(outputs_cat, targets_cat)
-                )
-                loss = loss_cont + loss_cat
-
+                outputs = self.forward(inputs)
+                loss = criterion(outputs, targets)
                 val_loss += loss.item()
         return val_loss / len(val_loader)
 
@@ -363,27 +525,17 @@ class FASD_Decoder(nn.Module):
         self.eval()
         with torch.no_grad():
             x = torch.tensor(X.values, dtype=torch.float32)
-            x_cont, x_cat = self.forward(x)
+            x = self.forward(x)
 
-        x_cat = [one_hot_from_probs(x) for x in x_cat]
-
-        # restructure output to original input structure
-        output = torch.zeros(
-            x_cont.size(0),
-            x_cont.size(1) + sum([x_cat_.size(1) for x_cat_ in x_cat]),
-            dtype=x_cont.dtype,
-            device=x_cont.device,
-        )
-        output[:, self.cont_idx] = x_cont
-        for idx, val in zip(self.cat_idx, x_cat):
-            output[:, idx] = val
+        for idx in self.cat_idx:
+            x[:, idx] = one_hot_from_probs(x[:, idx])
 
         # turn tensor into dataframe
-        X = pd.DataFrame(output.detach().numpy(), columns=self.output_cols)
+        X = pd.DataFrame(x.detach().numpy(), columns=self.output_cols)
         return X
 
 
-# one hot encode the categoricals according to softmax probabilities
+# one hot encode categoricals
 def one_hot_from_probs(x: torch.Tensor):
     idx = x.argmax(dim=1, keepdim=True)
     x = torch.zeros_like(x).scatter_(1, idx, 1)

@@ -125,80 +125,51 @@ class TabularVAE(nn.Module):
         patience: int = 20,
     ) -> None:
         super(TabularVAE, self).__init__()
-        self.columns = X.columns
         self.categorical_limit = 20
         self.encoder_whitelist = encoder_whitelist
         self.encoder_max_clusters = encoder_max_clusters
         self.fasd = fasd
-        self.fasd_args = fasd_args
         self.random_state = random_state
         n_units_conditional = 0
         self.cond_encoder: Optional[OneHotEncoder] = None
 
-        # we can specify discrete columns ourselves, or let tabular encoder figure them out through the categorical_limit
-        self.tab_encoder = TabularEncoder(
-            max_clusters=self.encoder_max_clusters,
-            whitelist=self.encoder_whitelist,
-            categorical_limit=self.categorical_limit,
-        ).fit(X, discrete_columns=None)
-
-        X_enc = self.tab_encoder.transform(X)
-        self.X_enc_ori = X_enc.copy()
-
-        # create encoded representations from encoded data
         if self.fasd:
-            # retrieve y from X (target name should always be 'target')
-            self.target_columns = [
-                col for col in X_enc.columns if col.startswith("target_")
-            ]
-            if len(self.target_columns) == 0:
-                raise Exception("Please ensure the target column is named target")
-            y = X_enc[self.target_columns]
-
-            # remove y from X
-            X_enc = X_enc.drop(self.target_columns, axis=1)
-            self.ohe_cols = X_enc.columns
-
-            # instantiate and train model
-            input_dim = X_enc.shape[1]
-            self.fasd_nn = FASD_NN(
-                input_dim=input_dim,
-                hidden_dim=fasd_args["hidden_dim"],
-                num_classes=y.shape[1],
-                random_state=self.random_state,
-                checkpoint_dir="workspace",
-                val_split=0.2,
-                latent_activation=nn.ReLU(),
+            self.tab_encoder = TabularEncoder(
+                continuous_encoder="minmax",
+                cont_encoder_params={"feature_range": (0, 1)},
+                whitelist=self.encoder_whitelist,
+                categorical_limit=self.categorical_limit,
             )
-            fasd_args.pop(
-                "hidden_dim"
-            )  # remove so we dont pass hidden_dim to train_model method
-            fasd_args["criterion"] = nn.CrossEntropyLoss()  # add criterion
-            fasd_args["optimizer"] = torch.optim.Adam(
-                self.fasd_nn.parameters(), lr=0.001
-            )  # add optimizer
-            self.fasd_nn.train_model(X=X_enc, y=y, **fasd_args)
-
-            # get df of representations
-            self.fasd_encoder, self.fasd_predictor = (
-                self.fasd_nn.encoder,
-                self.fasd_nn.predictor,
-            )
-
-            # we need the regular X data to become representations rather than original raw data, for later conditionals
-            X = self.fasd_encoder.encode(X_enc)
-
-            # pass representations through a new tabular encoder
-            # however we pass all columns as whitelist so they wont actually get encoded!
-            self.fasd_tab_encoder = TabularEncoder(
-                categorical_limit=1, max_clusters=10
-            ).fit(X, discrete_columns=None)
-            X_enc = self.fasd_tab_encoder.transform(X)
-            self.X_rep = X_enc.copy()
-
-            self.encoder = self.fasd_tab_encoder
         else:
-            # in the conditionals we use the regular encoder if not FASD, else we use the FASD encoder
+            self.tab_encoder = TabularEncoder(
+                max_clusters=self.encoder_max_clusters,
+                whitelist=self.encoder_whitelist,
+                categorical_limit=self.categorical_limit,
+            )
+
+        # we can specify discrete columns ourselves, or let tabular encoder figure them out through the categorical_limit
+        self.tab_encoder = self.tab_encoder.fit(X, discrete_columns=None)
+        X_enc = self.tab_encoder.transform(X)
+
+        if self.fasd:
+            # train fasd encoder and get representations
+            X_enc = self.fasd_generate_(
+                X_enc=X_enc, fasd_args=fasd_args, random_state=random_state
+            )
+
+            # set tabular encoder as passthrough representations
+            self.encoder = TabularEncoder(
+                continuous_encoder="passthrough",
+                cont_encoder_params={},
+                categorical_encoder="passthrough",
+                cat_encoder_params={},
+            ).fit(X_enc)
+            X_enc = self.encoder.transform(X_enc)
+            # set raw data as the generated representations, needed for conditionals
+            X = X_enc.copy()
+            # store a copy of the representations, needed to override the input data in the fit method
+            self.X_rep = X_enc.copy()
+        else:
             self.encoder = self.tab_encoder
 
         def _cond_loss(
@@ -252,7 +223,6 @@ class TabularVAE(nn.Module):
             loss = torch.stack(losses, dim=-1)
             return loss.sum() / len(real_samples)
 
-        # these conditionals should be placed after FASD, since this changes the data shape and thus conditionals shape
         if cond is not None:
             cond = np.asarray(cond)
             if len(cond.shape) == 1:
@@ -312,6 +282,119 @@ class TabularVAE(nn.Module):
             patience=patience,
         )
 
+    def fasd_generate_(self, X_enc: pd.DataFrame, fasd_args: dict, random_state: int):
+        X_enc = X_enc.copy()
+        # retrieve y from X (target name should always be 'target')
+        self.target_columns = [
+            col for col in X_enc.columns if col.startswith("target_")
+        ]
+        if len(self.target_columns) == 0:
+            raise Exception("Please ensure the target column is named target")
+
+        y = X_enc[self.target_columns]
+        X_enc = X_enc.drop(self.target_columns, axis=1)
+        X_ori = X_enc.copy()
+
+        # instantiate and train model
+        fasd_nn = FASD_NN(
+            input_dim=X_enc.shape[1],
+            hidden_dim=fasd_args["hidden_dim"],
+            num_classes=y.shape[1],
+            random_state=random_state,
+            checkpoint_dir="workspace",
+            val_split=0.3,
+            latent_activation=nn.Identity(),
+        )
+        fasd_args.pop(
+            "hidden_dim"
+        )  # remove so we dont pass hidden_dim to train_model method
+        fasd_args["criterion"] = (
+            nn.CrossEntropyLoss()
+        )  # add criterion, currently only supports classification
+        fasd_args["optimizer"] = torch.optim.Adam(
+            fasd_nn.parameters(), lr=0.001
+        )  # add optimizer
+        # train neural network to predict targets from encoded input
+        fasd_nn.train_model(X=X_enc, y=y, **fasd_args)
+
+        # pass encoded input data through encoder to create continuous representations (now considered the raw data, X)
+        X_enc = fasd_nn.encoder.encode(X_enc)
+
+        self.fasd_nn = fasd_nn
+
+        self.fasd_decode_(
+            X_rep=X_enc,
+            X_raw=X_ori,
+            fasd_args=fasd_args,
+            random_state=random_state,
+        )
+
+        return X_enc
+
+    def fasd_decode_(
+        self,
+        X_rep: pd.DataFrame,
+        X_raw: pd.DataFrame,
+        fasd_args: dict,
+        random_state: int,
+    ):
+        X_rep, X_raw = X_rep.copy(), X_raw.copy()
+
+        # find indices of discrete and continuous features in encoded space
+        def find_discrete_ohe_features(ori_discrete_columns, df_cols):
+            discrete = []
+            for col_dis in ori_discrete_columns:
+                cur_discrete = []
+                for num, col_df in enumerate(df_cols):
+                    if col_df.startswith(col_dis):
+                        cur_discrete.append(num)
+                if len(cur_discrete) > 0:
+                    discrete.append(cur_discrete)
+            return discrete
+
+        if bool(set(X_raw.columns) & (set(self.target_columns))):
+            raise Exception("please pass raw data without target features")
+
+        discr_idx = find_discrete_ohe_features(
+            ori_discrete_columns=json.loads(os.environ.get("DISCRETE")),
+            df_cols=X_raw.columns,
+        )
+        cont_idx = [
+            x
+            for x in list(range(len(X_raw.columns)))
+            if x not in [item for list in discr_idx for item in list]
+        ]
+
+        # train decoder to decode representations from representation space to raw feature space
+        fasd_decoder = FASD_Decoder(
+            input_dim=X_rep.shape[1],
+            cont_idx=cont_idx,
+            cat_idx=discr_idx,
+            checkpoint_dir="workspace",
+            val_split=0.3,
+            random_state=random_state,
+        )
+        # fasd_decoder_args = {
+        #     "criterion_cont": nn.MSELoss(),
+        #     "criterion_cat": nn.CrossEntropyLoss(),
+        #     "optimizer": fasd_args["optimizer"],
+        #     "num_epochs": fasd_args["num_epochs"],
+        #     "batch_size": fasd_args["batch_size"],
+        # }
+        fasd_decoder_args = {
+            "criterion": nn.MSELoss(),
+            "optimizer": fasd_args["optimizer"],
+            "num_epochs": fasd_args["num_epochs"],
+            "batch_size": fasd_args["batch_size"],
+        }
+        fasd_decoder.train_model(
+            X=X_rep,
+            y=X_raw,
+            **fasd_decoder_args,
+        )
+
+        self.fasd_decoder = fasd_decoder
+
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def encode(self, X: pd.DataFrame) -> pd.DataFrame:
         return self.encoder.transform(X)
@@ -332,9 +415,9 @@ class TabularVAE(nn.Module):
     ) -> Any:
 
         if self.fasd:
-            X_enc = self.X_rep
+            X_enc = self.X_rep.copy()
         else:
-            X_enc = self.X_enc_ori
+            X_enc = self.encode(X)
 
         if cond is not None and self.cond_encoder is not None:
             cond = np.asarray(cond)
@@ -367,67 +450,17 @@ class TabularVAE(nn.Module):
         samples = pd.DataFrame(self(count, cond))
 
         if self.fasd:
-            # predict y from synthetic representations, but these first need to be decoded back to original latent space
-            # y = self.fasd_predictor.predict(
-            #     self.fasd_tab_encoder.inverse_transform(samples)
-            # )
-            y = self.fasd_predictor.predict(samples)
+            # predict targets from synthetic representations
+            y = self.fasd_nn.predictor.predict(samples)
+            print(f"target class occurence in synthetic samples: \n {y.sum(axis=0)}")
 
-            # train decoder to decode representations back to original data space (this can be from encoded space)
-            # for this we have to first find which columns are discrete (one-hot) and continuous in the regular data space
-            def find_discrete_ohe_features(ori_discrete_columns, df_cols):
-                discrete = []
-                for col_dis in ori_discrete_columns:
-                    cur_discrete = []
-                    for num, col_df in enumerate(df_cols):
-                        if col_df.startswith(col_dis):
-                            cur_discrete.append(num)
-                    if len(cur_discrete) > 0:
-                        discrete.append(cur_discrete)
-                return discrete
+            # decode synthetic representations to original data space
+            samples = self.fasd_decoder.decode(samples)
 
-            discrete_feats = find_discrete_ohe_features(
-                ori_discrete_columns=json.loads(os.environ.get("DISCRETE")),
-                df_cols=self.ohe_cols,
-            )
-            cont_feats = [
-                x
-                for x in list(range(len(self.ohe_cols)))
-                if x not in [item for list in discrete_feats for item in list]
-            ]
-
-            fasd_decoder = FASD_Decoder(
-                input_dim=self.X_rep.shape[1],
-                cont_idx=cont_feats,
-                cat_idx=discrete_feats,
-                checkpoint_dir="workspace",
-                val_split=0.2,
-                random_state=self.random_state,
-            )
-
-            fasd_decoder_args = {
-                "criterion_cont": nn.MSELoss(),
-                "criterion_cat": nn.CrossEntropyLoss(),
-                "optimizer": self.fasd_args["optimizer"],
-                "num_epochs": self.fasd_args["num_epochs"],
-                "batch_size": self.fasd_args["batch_size"],
-            }
-
-            # we train the decoder to predict original encoded data from the original representations
-            # first we still have to remove the target column from the original dataset (representations do not contain this) to get the target dataset
-            fasd_decoder.train_model(
-                X=self.X_rep,
-                y=self.X_enc_ori.drop(self.target_columns, axis=1),
-                **fasd_decoder_args,
-            )
-
-            # get decoded synthetic data
-            samples = fasd_decoder.decode(samples)
-
-            # reattach y
+            # attach predicted y to synthetic data
             samples[self.target_columns] = y
 
-        # decode tabular encoding of the original data
+        # decode tabular encoding of the original data (note this is the tab_encoder, not encoder, which is passthrough in case of fasd)
         samples = self.tab_encoder.inverse_transform(samples)
 
         return samples
