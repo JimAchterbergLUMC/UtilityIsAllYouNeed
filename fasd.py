@@ -2,7 +2,7 @@
 # this should be placed together with other plugins in the SynthCity package.
 # other plugins import the model from this file to incorporate the FASD option.
 
-# Note: currently only supports binary classification
+# Note: currently only supports classification as target
 import os
 import torch
 from torch import nn, Tensor
