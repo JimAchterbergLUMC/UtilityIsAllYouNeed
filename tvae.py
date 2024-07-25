@@ -383,7 +383,7 @@ class TabularVAE(nn.Module):
         # }
         fasd_decoder_args = {
             "criterion": nn.MSELoss(),
-            "optimizer": fasd_args["optimizer"],
+            "optimizer": torch.optim.Adam(fasd_decoder.parameters(), lr=0.001),
             "num_epochs": fasd_args["num_epochs"],
             "batch_size": fasd_args["batch_size"],
         }

@@ -130,7 +130,12 @@ class FASD_NN(nn.Module):
         X, y = X.copy(), y.copy()
 
         X, X_val, y, y_val = train_test_split(
-            X, y, test_size=self.val_split, stratify=y, random_state=self.random_state
+            X,
+            y,
+            test_size=self.val_split,
+            stratify=y,
+            random_state=self.random_state,
+            shuffle=True,
         )
 
         # create dataloaders for training
@@ -140,7 +145,7 @@ class FASD_NN(nn.Module):
                 torch.tensor(y.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=False,
+            shuffle=True,
         )
         val_loader = DataLoader(
             TensorDataset(
@@ -148,12 +153,10 @@ class FASD_NN(nn.Module):
                 torch.tensor(y_val.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=False,
+            shuffle=True,
         )
 
-        # training loop
-        # best_loss = float("inf")
-        best_acc = float("inf")
+        best_acc = -999
         for epoch in range(num_epochs):
             self.train()
             train_loss = 0
@@ -161,7 +164,7 @@ class FASD_NN(nn.Module):
             train_total = 0
             for inputs, targets in dataloader:
                 outputs = self.forward(inputs)
-                loss = criterion(torch.squeeze(outputs).float(), targets.float())
+                loss = criterion(outputs, targets)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -178,12 +181,9 @@ class FASD_NN(nn.Module):
             print(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss/len(dataloader):.4f}, Acc: {train_acc:.2f}, Val_Loss: {val_loss:.4f}, Val_Acc: {val_acc:.2f}"
             )
-            if val_acc < best_acc:
+            if val_acc > best_acc:
                 best_acc = val_acc
                 torch.save(self.state_dict(), model_path)
-            # if val_loss < best_loss:
-            #     best_loss = val_loss
-            #     torch.save(self.state_dict(), model_path)
 
         # load best performing model on validation set
         self.load_state_dict(torch.load(model_path))
@@ -196,7 +196,7 @@ class FASD_NN(nn.Module):
         with torch.no_grad():
             for inputs, targets in val_loader:
                 outputs = self.forward(inputs)
-                loss = criterion(torch.squeeze(outputs).float(), targets.float())
+                loss = criterion(outputs, targets)
                 val_loss += loss.item()
 
                 # Calculate accuracy
@@ -459,7 +459,7 @@ class FASD_Decoder(nn.Module):
         # split into validation set for monitoring and best model selection
         X, y = X.copy(), y.copy()
         X, X_val, y, y_val = train_test_split(
-            X, y, test_size=self.val_split, random_state=self.random_state
+            X, y, test_size=self.val_split, random_state=self.random_state, shuffle=True
         )
 
         # create dataloaders for training
@@ -469,7 +469,7 @@ class FASD_Decoder(nn.Module):
                 torch.tensor(y.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=False,
+            shuffle=True,
         )
 
         val_loader = DataLoader(
@@ -478,7 +478,7 @@ class FASD_Decoder(nn.Module):
                 torch.tensor(y_val.values, dtype=torch.float32),
             ),
             batch_size=batch_size,
-            shuffle=False,
+            shuffle=True,
         )
 
         # training loop
@@ -491,7 +491,6 @@ class FASD_Decoder(nn.Module):
                 loss = criterion(outputs, targets)
                 optimizer.zero_grad()
                 loss.backward()
-
                 train_loss += loss.item()
                 optimizer.step()
             val_loss = self.validate(val_loader, criterion)

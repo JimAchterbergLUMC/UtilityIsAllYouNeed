@@ -58,7 +58,7 @@ score = Benchmarks.evaluate(
                 "fasd_args": {
                     "hidden_dim": 32,
                     "num_epochs": 300,
-                    "batch_size": 512,
+                    "batch_size": 64,
                 },
                 **tvae_kwargs,
             },
