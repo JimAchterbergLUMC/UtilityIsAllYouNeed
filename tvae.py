@@ -452,7 +452,6 @@ class TabularVAE(nn.Module):
         if self.fasd:
             # predict targets from synthetic representations
             y = self.fasd_nn.predictor.predict(samples)
-            print(f"target class occurence in synthetic samples: \n {y.sum(axis=0)}")
 
             # decode synthetic representations to original data space
             samples = self.fasd_decoder.decode(samples)

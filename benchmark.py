@@ -27,15 +27,17 @@ os.environ["DISCRETE"] = discrete_json
 
 # setup dataloader
 X_r = GenericDataLoader(
-    df,
+    data=df,
+    sensitive_features=config["sensitive"],
     target_column="target",
-    sensitive_columns=config["sensitive"],
+    random_state=123,
+    train_size=0.8,
 )
 
 
 tvae_kwargs = {
     "batch_size": 500,
-    "n_iter": 300,
+    "n_iter": 10,
     "n_units_embedding": 128,
     "decoder_n_layers_hidden": 1,
     "decoder_n_units_hidden": 128,
@@ -47,6 +49,7 @@ tvae_kwargs = {
     "encoder_dropout": 0,
     "loss_factor": 2,
 }
+# tvae_kwargs = {}
 # setup benchmarking
 score = Benchmarks.evaluate(
     [
@@ -56,8 +59,8 @@ score = Benchmarks.evaluate(
             {
                 "fasd": True,
                 "fasd_args": {
-                    "hidden_dim": 32,
-                    "num_epochs": 300,
+                    "hidden_dim": 64,
+                    "num_epochs": 10,
                     "batch_size": 64,
                 },
                 **tvae_kwargs,
@@ -71,7 +74,13 @@ score = Benchmarks.evaluate(
     ],
     X_r,
     task_type="classification",
-    metrics={"performance": ["xgb"], "detection": ["detection_xgb"]},
+    metrics={
+        # "stats": ["jensenshannon_dist"],
+        # "performance": ["xgb"],
+        # "detection": ["detection_xgb"],
+        # "privacy": ["identifiability_score"],
+        "attack": ["data_leakage_xgb"],
+    },
     synthetic_size=len(df),
     repeats=1,
     synthetic_cache=False,
