@@ -14,7 +14,6 @@ X = dataset.data.features
 y = dataset.data.targets
 
 df = preprocess(X=X, y=y, config=config)
-df = df[:5000]
 # print(df.nunique())
 # plot_df(df)
 
@@ -30,27 +29,12 @@ X_r = GenericDataLoader(
     data=df,
     sensitive_features=config["sensitive"],
     target_column="target",
-    random_state=123,
+    random_state=0,
     train_size=0.8,
 )
 
 
-tvae_kwargs = {
-    "batch_size": 500,
-    "n_iter": 10,
-    "n_units_embedding": 128,
-    "decoder_n_layers_hidden": 1,
-    "decoder_n_units_hidden": 128,
-    "decoder_nonlin": "relu",
-    "decoder_dropout": 0,
-    "encoder_n_layers_hidden": 1,
-    "encoder_n_units_hidden": 128,
-    "encoder_nonlin": "relu",
-    "encoder_dropout": 0,
-    "loss_factor": 2,
-}
-# tvae_kwargs = {}
-# setup benchmarking
+tvae_kwargs = {}
 score = Benchmarks.evaluate(
     [
         (
@@ -60,8 +44,8 @@ score = Benchmarks.evaluate(
                 "fasd": True,
                 "fasd_args": {
                     "hidden_dim": 64,
-                    "num_epochs": 10,
-                    "batch_size": 64,
+                    "num_epochs": 1000,
+                    "batch_size": 200,
                 },
                 **tvae_kwargs,
             },
@@ -75,11 +59,43 @@ score = Benchmarks.evaluate(
     X_r,
     task_type="classification",
     metrics={
-        # "stats": ["jensenshannon_dist"],
-        # "performance": ["xgb"],
-        # "detection": ["detection_xgb"],
-        # "privacy": ["identifiability_score"],
-        "attack": ["data_leakage_xgb"],
+        # "sanity": [
+        #     "data_mismatch",
+        #     "common_rows_proportion",
+        #     "nearest_syn_neighbor_distance",
+        #     "close_values_probability",
+        #     "distant_values_probability",
+        # ],
+        "stats": [
+            "jensenshannon_dist",
+            # "chi_squared_test",
+            # "feature_corr",
+            # "inv_kl_divergence",
+            # "ks_test",
+            "max_mean_discrepancy",
+            "wasserstein_dist",
+            # "prdc",
+            "alpha_precision",
+            # "survival_km_distance",
+        ],
+        "performance": ["linear_model", "mlp", "xgb", "feat_rank_distance"],
+        "detection": [
+            "detection_xgb",
+            "detection_mlp",
+            "detection_gmm",
+            "detection_linear",
+        ],
+        "privacy": [
+            "delta-presence",
+            "k-anonymization",
+            "k-map",
+            "distinct l-diversity",
+            "identifiability_score",
+            # "DomiasMIA_BNAF",
+            # "DomiasMIA_KDE",
+            # "DomiasMIA_prior",
+        ],
+        "attack": ["data_leakage_linear", "data_leakage_xgb", "data_leakage_mlp"],
     },
     synthetic_size=len(df),
     repeats=1,

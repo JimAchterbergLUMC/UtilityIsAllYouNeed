@@ -2,7 +2,7 @@
 # this should be placed together with other plugins in the SynthCity package.
 # other plugins import the model from this file to incorporate the FASD option.
 
-# Note: currently only supports classification as target
+# Note: currently only supports binary classification
 import os
 import torch
 from torch import nn, Tensor
@@ -117,6 +117,8 @@ class FASD_NN(nn.Module):
         optimizer,
         num_epochs=10,
         batch_size=64,
+        early_stop_patience=20,
+        early_stop_delta=1e-4,
     ):
         # path to fasd model for checkpointing
         model_file = "best_fasd_model.pth"
@@ -157,6 +159,7 @@ class FASD_NN(nn.Module):
         )
 
         best_acc = -999
+        early_stop_counter = 0
         for epoch in range(num_epochs):
             self.train()
             train_loss = 0
@@ -169,8 +172,6 @@ class FASD_NN(nn.Module):
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item()
-
-                # Calculate accuracy
                 train_total += targets.size(0)
                 _, preds = torch.max(outputs.data, 1)
                 _, tar = torch.max(targets, 1)
@@ -181,9 +182,19 @@ class FASD_NN(nn.Module):
             print(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss/len(dataloader):.4f}, Acc: {train_acc:.2f}, Val_Loss: {val_loss:.4f}, Val_Acc: {val_acc:.2f}"
             )
+
+            # save best model if best model at current epoch
             if val_acc > best_acc:
                 best_acc = val_acc
                 torch.save(self.state_dict(), model_path)
+
+            # early stopping if validation metric not improving for many epochs
+            if (val_acc != best_acc) & (val_acc < (best_acc + early_stop_delta)):
+                early_stop_counter += 1
+            else:
+                early_stop_counter = 0
+            if early_stop_counter == early_stop_patience:
+                break
 
         # load best performing model on validation set
         self.load_state_dict(torch.load(model_path))
@@ -445,6 +456,8 @@ class FASD_Decoder(nn.Module):
         optimizer,
         num_epochs=10,
         batch_size=64,
+        early_stop_patience=20,
+        early_stop_delta=1e-4,
     ):
 
         self.output_cols = y.columns
@@ -483,6 +496,8 @@ class FASD_Decoder(nn.Module):
 
         # training loop
         best_loss = float("inf")
+        val_loss = float("inf")
+        early_stop_counter = 0
         for epoch in range(num_epochs):
             self.train()
             train_loss = 0
@@ -499,9 +514,18 @@ class FASD_Decoder(nn.Module):
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss/len(dataloader):.4f}, Val_Loss: {val_loss:.4f}"
             )
 
+            # update best model state if best model at current epoch
             if val_loss < best_loss:
                 best_loss = val_loss
                 torch.save(self.state_dict(), model_path)
+
+            # early stopping if validation loss not improving for many epochs
+            if (val_loss != best_loss) & (val_loss > (best_loss - early_stop_delta)):
+                early_stop_counter += 1
+            else:
+                early_stop_counter = 0
+            if early_stop_counter == early_stop_patience:
+                break
 
         # load best performing model on validation set
         self.load_state_dict(torch.load(model_path))
