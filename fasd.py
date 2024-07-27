@@ -279,6 +279,8 @@ class FASD_NN(nn.Module):
 #         optimizer,
 #         num_epochs=10,
 #         batch_size=64,
+#         early_stop_patience=20,
+#         early_stop_delta=1e-4,
 #     ):
 
 #         self.output_cols = y.columns
@@ -317,6 +319,8 @@ class FASD_NN(nn.Module):
 
 #         # training loop
 #         best_loss = float("inf")
+#         val_loss = float('inf')
+#         early_stop_counter = 0
 #         for epoch in range(num_epochs):
 #             self.train()
 #             for inputs, targets in dataloader:
@@ -331,7 +335,7 @@ class FASD_NN(nn.Module):
 #                 loss_cat = sum(
 #                     criterion_cat(output, target)
 #                     for output, target in zip(outputs_cat, targets_cat)
-#                 )
+#                 )/len(outputs_cat)
 #                 loss = loss_cont + loss_cat
 
 #                 optimizer.zero_grad()
@@ -346,6 +350,14 @@ class FASD_NN(nn.Module):
 #             if val_loss < best_loss:
 #                 best_loss = val_loss
 #                 torch.save(self.state_dict(), model_path)
+
+#            # early stopping if validation loss not improving for many epochs
+#             if (val_loss != best_loss) & (val_loss > (best_loss - early_stop_delta)):
+#                 early_stop_counter += 1
+#             else:
+#                 early_stop_counter = 0
+#             if early_stop_counter == early_stop_patience:
+#                 break
 
 #         # load best performing model on validation set
 #         self.load_state_dict(torch.load(model_path))
@@ -364,7 +376,7 @@ class FASD_NN(nn.Module):
 #                 loss_cat = sum(
 #                     criterion_cat(output, target)
 #                     for output, target in zip(outputs_cat, targets_cat)
-#                 )
+#                 )/len(outputs_cat)
 #                 loss = loss_cont + loss_cat
 
 #                 val_loss += loss.item()

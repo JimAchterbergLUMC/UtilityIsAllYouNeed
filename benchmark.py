@@ -5,6 +5,7 @@ import json
 from ucimlrepo import fetch_ucirepo
 from utils import preprocess, plot_df
 
+
 ds = "adult"
 with open("datasets.json", "r") as f:
     config = json.load(f)
@@ -14,6 +15,7 @@ X = dataset.data.features
 y = dataset.data.targets
 
 df = preprocess(X=X, y=y, config=config)
+# df = df[:5000]
 # print(df.nunique())
 # plot_df(df)
 
@@ -34,26 +36,73 @@ X_r = GenericDataLoader(
 )
 
 
+# tvae_kwargs = {
+#     "n_iter": 300,
+#     "n_units_embedding": 128,
+#     "lr": 0.001,
+#     "weight_decay": 1e-05,
+#     "batch_size": 500,
+#     "random_state": 0,
+#     "decoder_n_layers_hidden": 2,
+#     "decoder_n_units_hidden": 128,
+#     "decoder_nonlin": "relu",
+#     "decoder_dropout": 0,
+#     "encoder_n_layers_hidden": 2,
+#     "encoder_n_units_hidden": 128,
+#     "encoder_nonlin": "relu",
+#     "encoder_dropout": 0,
+#     "loss_factor": 2,
+#     "data_encoder_max_clusters": 10,
+#     "clipping_value": 1,
+#     "n_iter_print": 50,
+#     "n_iter_min": 100,
+#     "patience": 5,
+#     # "device": device(type="cpu"),
+#     "workspace": "workspace",
+#     "compress_dataset": False,
+#     "sampling_patience": 500,
+# }
 tvae_kwargs = {}
+fasd_args = {
+    "hidden_dim": 64,
+    "num_epochs": 300,
+    "batch_size": 500,
+}
 score = Benchmarks.evaluate(
     [
         (
-            "TVAE_FASD",
+            "FASD",
             "tvae",
             {
                 "fasd": True,
-                "fasd_args": {
-                    "hidden_dim": 64,
-                    "num_epochs": 1000,
-                    "batch_size": 200,
-                },
+                "fasd_args": fasd_args,
                 **tvae_kwargs,
             },
+        ),
+        (
+            "ARF",
+            "arf",
+            {},
         ),
         (
             "TVAE",
             "tvae",
             {"fasd": False, **tvae_kwargs},
+        ),
+        (
+            "CTGAN",
+            "ctgan",
+            {},
+        ),
+        (
+            "BN",
+            "bayesian_network",
+            {},
+        ),
+        (
+            "NFLOW",
+            "nflow",
+            {},
         ),
     ],
     X_r,
@@ -68,22 +117,25 @@ score = Benchmarks.evaluate(
         # ],
         "stats": [
             "jensenshannon_dist",
-            # "chi_squared_test",
+            "chi_squared_test",
             # "feature_corr",
-            # "inv_kl_divergence",
-            # "ks_test",
+            "inv_kl_divergence",
+            "ks_test",
             "max_mean_discrepancy",
             "wasserstein_dist",
             # "prdc",
             "alpha_precision",
             # "survival_km_distance",
         ],
-        "performance": ["linear_model", "mlp", "xgb", "feat_rank_distance"],
+        "performance": [  # "linear_model", "mlp",
+            "xgb",
+            # "feat_rank_distance"
+        ],
         "detection": [
             "detection_xgb",
-            "detection_mlp",
-            "detection_gmm",
-            "detection_linear",
+            # "detection_mlp",
+            # "detection_gmm",
+            # "detection_linear",
         ],
         "privacy": [
             "delta-presence",
@@ -95,7 +147,10 @@ score = Benchmarks.evaluate(
             # "DomiasMIA_KDE",
             # "DomiasMIA_prior",
         ],
-        "attack": ["data_leakage_linear", "data_leakage_xgb", "data_leakage_mlp"],
+        "attack": [  # "data_leakage_linear",
+            "data_leakage_xgb",
+            # "data_leakage_mlp"
+        ],
     },
     synthetic_size=len(df),
     repeats=1,
@@ -106,8 +161,9 @@ score = Benchmarks.evaluate(
 
 if not os.path.exists("results"):
     os.makedirs("results")
-score["TVAE_FASD"].to_csv("results/tvae_fasd.csv")
+score["FASD"].to_csv("results/fasd.csv")
+score["ARF"].to_csv("results/arf.csv")
 score["TVAE"].to_csv("results/tvae.csv")
-
-print(score["TVAE_FASD"])
-print(score["TVAE"])
+score["CTGAN"].to_csv("results/ctgan.csv")
+score["BN"].to_csv("results/bn.csv")
+score["NFLOW"].to_csv("results/nflow.csv")

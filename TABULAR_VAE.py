@@ -157,7 +157,13 @@ class TabularVAE(nn.Module):
                 X_enc=X_enc, fasd_args=fasd_args, random_state=random_state
             )
 
-            # set tabular encoder as passthrough representations
+            # scale representations to (0,1) for numerical stability in TVAE
+            # self.encoder = TabularEncoder(
+            #     continuous_encoder="minmax",
+            #     cont_encoder_params={"feature_range": (0, 1)},
+            #     categorical_encoder="passthrough",
+            #     cat_encoder_params={},
+            # ).fit(X_enc)
             self.encoder = TabularEncoder(
                 continuous_encoder="passthrough",
                 cont_encoder_params={},
@@ -302,7 +308,7 @@ class TabularVAE(nn.Module):
             num_classes=y.shape[1],
             random_state=random_state,
             checkpoint_dir="workspace",
-            val_split=0.3,
+            val_split=0.2,
             latent_activation=nn.Identity(),
         )
         fasd_args.pop(
@@ -371,13 +377,13 @@ class TabularVAE(nn.Module):
             cont_idx=cont_idx,
             cat_idx=discr_idx,
             checkpoint_dir="workspace",
-            val_split=0.3,
+            val_split=0.2,
             random_state=random_state,
         )
         # fasd_decoder_args = {
         #     "criterion_cont": nn.MSELoss(),
         #     "criterion_cat": nn.CrossEntropyLoss(),
-        #     "optimizer": fasd_args["optimizer"],
+        #     "optimizer": torch.optim.Adam(fasd_decoder.parameters(), lr=0.001),
         #     "num_epochs": fasd_args["num_epochs"],
         #     "batch_size": fasd_args["batch_size"],
         # }
@@ -450,8 +456,8 @@ class TabularVAE(nn.Module):
         samples = pd.DataFrame(self(count, cond))
 
         if self.fasd:
-            # predict targets from synthetic representations
-            y = self.fasd_nn.predictor.predict(samples)
+            # predict targets from synthetic representations (after first decoding back from (0,1) tabular encoding)
+            y = self.fasd_nn.predictor.predict(self.encoder.inverse_transform(samples))
 
             # decode synthetic representations to original data space
             samples = self.fasd_decoder.decode(samples)
@@ -459,7 +465,7 @@ class TabularVAE(nn.Module):
             # attach predicted y to synthetic data
             samples[self.target_columns] = y
 
-        # decode tabular encoding of the original data (note this is the tab_encoder, not encoder, which is passthrough in case of fasd)
+        # decode tabular encoding of the original data
         samples = self.tab_encoder.inverse_transform(samples)
 
         return samples
