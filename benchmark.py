@@ -15,7 +15,7 @@ X = dataset.data.features
 y = dataset.data.targets
 
 df = preprocess(X=X, y=y, config=config)
-# df = df[:5000]
+# df = df[:500]
 # print(df.nunique())
 # plot_df(df)
 
@@ -70,38 +70,43 @@ fasd_args = {
 }
 score = Benchmarks.evaluate(
     [
+        # (
+        #     "FASD",
+        #     "tvae",
+        #     {
+        #         "fasd": True,
+        #         "fasd_args": fasd_args,
+        #         **tvae_kwargs,
+        #     },
+        # ),
+        # (
+        #     "ARF",
+        #     "arf",
+        #     {},
+        # ),
+        # (
+        #     "TVAE",
+        #     "tvae",
+        #     {"fasd": False, **tvae_kwargs},
+        # ),
+        # (
+        #     "CTGAN",
+        #     "ctgan",
+        #     {},
+        # ),
+        # (
+        #     "BN",
+        #     "bayesian_network",
+        #     {},
+        # ),
+        # (
+        #     "NFLOW",
+        #     "nflow",
+        #     {},
+        # ),
         (
-            "FASD",
-            "tvae",
-            {
-                "fasd": True,
-                "fasd_args": fasd_args,
-                **tvae_kwargs,
-            },
-        ),
-        (
-            "ARF",
-            "arf",
-            {},
-        ),
-        (
-            "TVAE",
-            "tvae",
-            {"fasd": False, **tvae_kwargs},
-        ),
-        (
-            "CTGAN",
-            "ctgan",
-            {},
-        ),
-        (
-            "BN",
-            "bayesian_network",
-            {},
-        ),
-        (
-            "NFLOW",
-            "nflow",
+            "marg",
+            "marginal_distributions",
             {},
         ),
     ],
@@ -161,9 +166,12 @@ score = Benchmarks.evaluate(
 
 if not os.path.exists("results"):
     os.makedirs("results")
-score["FASD"].to_csv("results/fasd.csv")
-score["ARF"].to_csv("results/arf.csv")
-score["TVAE"].to_csv("results/tvae.csv")
-score["CTGAN"].to_csv("results/ctgan.csv")
-score["BN"].to_csv("results/bn.csv")
-score["NFLOW"].to_csv("results/nflow.csv")
+# score["FASD"].to_csv("results/fasd.csv")
+# score["ARF"].to_csv("results/arf.csv")
+# score["TVAE"].to_csv("results/tvae.csv")
+# score["CTGAN"].to_csv("results/ctgan.csv")
+# score["BN"].to_csv("results/bn.csv")
+# score["NFLOW"].to_csv("results/nflow.csv")
+score["marg"].to_csv("results/marg.csv")
+
+print(score["marg"])

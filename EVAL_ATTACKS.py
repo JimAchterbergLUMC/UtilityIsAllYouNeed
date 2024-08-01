@@ -96,7 +96,11 @@ class AttackEvaluator(MetricEvaluator):
         if len(output) == 0:
             return {}
 
-        results = {self._reduction: self.reduction()(output)}
+        # results = {self._reduction: self.reduction()(output)}
+        results = {}
+        for num, col in enumerate(X_gt.sensitive_features):
+            self.col = col
+            results[self.col] = output[num]
 
         save_to_file(cache_file, results)
 
