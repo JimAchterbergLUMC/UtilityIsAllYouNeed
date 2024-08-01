@@ -15,7 +15,7 @@ X = dataset.data.features
 y = dataset.data.targets
 
 df = preprocess(X=X, y=y, config=config)
-# df = df[:500]
+# df = df[:10000]
 # print(df.nunique())
 # plot_df(df)
 
