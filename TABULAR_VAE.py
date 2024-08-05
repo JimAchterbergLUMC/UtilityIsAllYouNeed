@@ -311,17 +311,16 @@ class TabularVAE(nn.Module):
             val_split=0.2,
             latent_activation=nn.Identity(),
         )
-        fasd_args.pop(
-            "hidden_dim"
-        )  # remove so we dont pass hidden_dim to train_model method
-        fasd_args["criterion"] = (
-            nn.CrossEntropyLoss()
-        )  # add criterion, currently only supports classification
-        fasd_args["optimizer"] = torch.optim.Adam(
-            fasd_nn.parameters(), lr=0.001
-        )  # add optimizer
+
         # train neural network to predict targets from encoded input
-        fasd_nn.train_model(X=X_enc, y=y, **fasd_args)
+        fasd_nn.train_model(
+            X=X_enc,
+            y=y,
+            criterion=nn.CrossEntropyLoss(),
+            optimizer=torch.optim.Adam(fasd_nn.parameters(), lr=0.001),
+            batch_size=fasd_args["batch_size"],
+            num_epochs=fasd_args["num_epochs"],
+        )
 
         # pass encoded input data through encoder to create continuous representations (now considered the raw data, X)
         X_enc = fasd_nn.encoder.encode(X_enc)

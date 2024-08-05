@@ -5,6 +5,9 @@ import json
 from ucimlrepo import fetch_ucirepo
 from utils import preprocess, plot_df
 
+# TBD:
+# - should MIA be added?
+
 
 ds = "adult"
 with open("datasets.json", "r") as f:
@@ -15,7 +18,7 @@ X = dataset.data.features
 y = dataset.data.targets
 
 df = preprocess(X=X, y=y, config=config)
-# df = df[:10000]
+df = df[:100]
 # print(df.nunique())
 # plot_df(df)
 
@@ -70,43 +73,38 @@ fasd_args = {
 }
 score = Benchmarks.evaluate(
     [
-        # (
-        #     "FASD",
-        #     "tvae",
-        #     {
-        #         "fasd": True,
-        #         "fasd_args": fasd_args,
-        #         **tvae_kwargs,
-        #     },
-        # ),
-        # (
-        #     "ARF",
-        #     "arf",
-        #     {},
-        # ),
-        # (
-        #     "TVAE",
-        #     "tvae",
-        #     {"fasd": False, **tvae_kwargs},
-        # ),
-        # (
-        #     "CTGAN",
-        #     "ctgan",
-        #     {},
-        # ),
-        # (
-        #     "BN",
-        #     "bayesian_network",
-        #     {},
-        # ),
-        # (
-        #     "NFLOW",
-        #     "nflow",
-        #     {},
-        # ),
         (
-            "marg",
-            "marginal_distributions",
+            "FASD",
+            "tvae",
+            {
+                "fasd": True,
+                "fasd_args": fasd_args,
+                **tvae_kwargs,
+            },
+        ),
+        (
+            "ARF",
+            "arf",
+            {},
+        ),
+        (
+            "TVAE",
+            "tvae",
+            {"fasd": False, **tvae_kwargs},
+        ),
+        (
+            "CTGAN",
+            "ctgan",
+            {},
+        ),
+        (
+            "BN",
+            "bayesian_network",
+            {},
+        ),
+        (
+            "NFLOW",
+            "nflow",
             {},
         ),
     ],
@@ -122,12 +120,12 @@ score = Benchmarks.evaluate(
         # ],
         "stats": [
             "jensenshannon_dist",
-            "chi_squared_test",
+            # "chi_squared_test",
             # "feature_corr",
-            "inv_kl_divergence",
-            "ks_test",
+            # "inv_kl_divergence",
+            # "ks_test",
             "max_mean_discrepancy",
-            "wasserstein_dist",
+            # "wasserstein_dist",
             # "prdc",
             "alpha_precision",
             # "survival_km_distance",
@@ -158,20 +156,15 @@ score = Benchmarks.evaluate(
         ],
     },
     synthetic_size=len(df),
-    repeats=1,
+    repeats=2,
     synthetic_cache=False,
     synthetic_reuse_if_exists=False,
     use_metric_cache=False,
 )
 
-if not os.path.exists("results"):
-    os.makedirs("results")
-# score["FASD"].to_csv("results/fasd.csv")
-# score["ARF"].to_csv("results/arf.csv")
-# score["TVAE"].to_csv("results/tvae.csv")
-# score["CTGAN"].to_csv("results/ctgan.csv")
-# score["BN"].to_csv("results/bn.csv")
-# score["NFLOW"].to_csv("results/nflow.csv")
-score["marg"].to_csv("results/marg.csv")
+result_path = f"results/{ds}"
+if not os.path.exists(result_path):
+    os.makedirs(result_path)
 
-print(score["marg"])
+for model in ["FASD", "ARF", "TVAE", "CTGAN", "BN", "NFLOW"]:
+    score[model].to_csv(result_path + f"/{model}.csv")

@@ -117,35 +117,49 @@ for j, (cat, metrics) in enumerate(metric_info.items()):
         palette="viridis",
     )
 
-    # Align error bars with bars
-    for i, model in enumerate(data["model"].unique()):
-        model_data = data[data["model"] == model]
-        bar_positions = [
-            bar.get_x() + bar.get_width() / 2
-            for bar in ax.patches
-            if bar.get_x() in model_data["name"].values
-        ]
+    # Highlight the 'TVAE' bar in bright red
+    for patch, model_name in zip(ax.patches, data["model"]):
+        if model_name == "FASD":
+            patch.set_facecolor("red")
 
-        # Map bar positions to actual data positions
-        positions = [
-            model_data["name"].tolist().index(name) for name in model_data["name"]
-        ]
+    # # Align error bars with bars
+    # for i, model in enumerate(data["model"].unique()):
+    #     model_data = data[data["model"] == model]
+    #     bar_positions = [
+    #         bar.get_x() + bar.get_width() / 2
+    #         for bar in ax.patches
+    #         if bar.get_x() in model_data["name"].values
+    #     ]
 
-        ax.errorbar(
-            x=np.array(positions)
-            + (i - 0.5) * (0.5 * bar_width),  # Adjust positions to center with bars
-            y=model_data["mean"],
-            yerr=model_data["stddev"],
-            fmt="none",  # No marker for the error bars
-            color="black",
-            capsize=5,
-        )
+    #     # Map bar positions to actual data positions
+    #     positions = [
+    #         model_data["name"].tolist().index(name) for name in model_data["name"]
+    #     ]
+
+    #     ax.errorbar(
+    #         x=np.array(positions)
+    #         + (i - 0.5) * (0.5 * bar_width),  # Adjust positions to center with bars
+    #         y=model_data["mean"],
+    #         yerr=model_data["stddev"],
+    #         fmt="none",  # No marker for the error bars
+    #         color="black",
+    #         capsize=5,
+    #     )
 
     axes[j].set_xlabel("")
     axes[j].set_ylabel("")
     axes[j].set_ylim((0, 1))
     axes[j].set_title(cat)
     axes[j].legend(loc="upper right")
+
+    # Customize the legend
+    handles, labels = ax.get_legend_handles_labels()
+    new_handles = []
+    for handle, label in zip(handles, labels):
+        if label == "FASD":
+            handle.set_color("red")  # Set legend color to red for 'TVAE'
+        new_handles.append(handle)
+    axes[j].legend(handles=new_handles, loc="upper right")
 
 plt.suptitle("Adult Census")
 plt.tight_layout()
