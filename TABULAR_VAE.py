@@ -157,15 +157,9 @@ class TabularVAE(nn.Module):
                 X_enc=X_enc, fasd_args=fasd_args, random_state=random_state
             )
 
-            # scale representations to (0,1) for numerical stability in TVAE
-            # self.encoder = TabularEncoder(
-            #     continuous_encoder="minmax",
-            #     cont_encoder_params={"feature_range": (0, 1)},
-            #     categorical_encoder="passthrough",
-            #     cat_encoder_params={},
-            # ).fit(X_enc)
+            # potentially scale representations to prevent numerical instability (exploding gradients) during training
             self.encoder = TabularEncoder(
-                continuous_encoder="passthrough",
+                continuous_encoder="standard",
                 cont_encoder_params={},
                 categorical_encoder="passthrough",
                 cat_encoder_params={},
